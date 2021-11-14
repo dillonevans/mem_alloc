@@ -1,5 +1,5 @@
-#include "../include/block_t.h"
-
+#include "../include/free_list.h"
+#include <unistd.h>
 static block_t* head = NULL;
 
 void push_front(block_t* block)
@@ -88,7 +88,7 @@ void dump_free_list()
     printf("Contents of Free List:\n");
     while (current)
     {
-        printf("Address: 0x%p, Size: %lu\n", current, current->size);
+        printf("Address: %p, Size: %lu bytes\n", current, current->size);
         current = current->next;
     }
 }
@@ -128,7 +128,7 @@ void merge(block_t* block, block_t* neighbor)
     /**
      * Consume the size of the neighboring block and remove it from the list
      */
-    block->size = block->size + neighbor->size;
+    block->size = block->size + neighbor->size + BLOCK_SIZE;
     remove_from_list(neighbor);
 }
 

@@ -1,15 +1,14 @@
 CC=gcc
 CFLAGS=-Wall
 
-all: block_t.o mem_alloc.o demo.o demo clean ./demo
+all: demo clean
 
-demo.o: demo.c ../include/mem_alloc.h ../include/block_t.h
+demo.o: demo.c ../include/mem_alloc.h ../include/free_list.h
+free_list.o: free_list.c ../include/free_list.h
+mem_alloc.o: mem_alloc.c ../include/mem_alloc.h ../include/free_list.h
 
-block_t.o: block_t.c ../include/block_t.h
-mem_alloc.o: mem_alloc.c ../include/mem_alloc.h ../include/block_t.h
-
-demo: block_t.o mem_alloc.o demo.o
-	$(CC) -o demo mem_alloc.o block_t.o demo.o
+demo: free_list.o mem_alloc.o demo.o
+	$(CC) -o demo mem_alloc.o free_list.o demo.o
 
 clean: 
 	rm -f *.o

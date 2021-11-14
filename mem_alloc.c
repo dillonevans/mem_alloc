@@ -59,7 +59,7 @@ void* mem_alloc(size_t bytes)
         if (startingAddress == UNSUCCESSFUL) {
             return NULL;
         }
-        // Create a block just beyond the last program break
+        // Create a block just beyond the last page break
         block_t* block = (block_t*)(startingAddress);
         block->size = allocatedBytes - BLOCK_SIZE;
 

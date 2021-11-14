@@ -2,7 +2,7 @@
 #define __MEM_ALLOC_H__
 
 #include <stdio.h>
-#include "block_t.h"
+#include "free_list.h"
 #include <stdbool.h>
 
 #define PAGE_SIZE getpagesize()
