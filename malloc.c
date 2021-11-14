@@ -9,27 +9,27 @@ struct block_t
 };
 
 #define MEGABYTE 1024 * 1024
-#define MAX_BYTES 16 * MEGABYTE
-#define BLOCK_SIZE ((sizeof(block_t) | 15) + 1)
+#define MAX_BYTES MEGABYTE
+#define BLOCK_SIZE ((sizeof(block_t) + 7 ) & (-8))
 #define ALIGN(bytes) (bytes % 8 == 0 ? bytes : ((bytes + 7) & (-8)))
 #define BLOCK(ptr) ((block_t*)((unsigned long)ptr - BLOCK_SIZE))
-#define MEM(ptr) ((void*)((unsigned long)ptr + BLOCK_SIZE))
+#define MEM(block) ((void*)((unsigned long)block + BLOCK_SIZE))
+#define NEIGHBOR(block) ((block_t*)((unsigned long)block + BLOCK_SIZE + block->size))
 
 static byte mallocBuffer[MAX_BYTES];
 static block_t* head = NULL;
 
 void init_mem_alloc()
 {
+
     head = (block_t*)(mallocBuffer);
     head->size = MAX_BYTES - BLOCK_SIZE;
     head->next = NULL;
     head->prev = NULL;
 }
 
-void add_to_list(block_t* block)
+void push_front(block_t* block)
 {
-	//TODO: Add block after a block with a lower address
-	
     if (!head)
     {
         head = block;
@@ -38,22 +38,60 @@ void add_to_list(block_t* block)
     }
     else
     {
-		block_t *current = head;
-	while (current->next)
-	{
-		printf("DIFF %d\n", (unsigned long)block - (unsigned long)current);
-		current = current->next;
-	}
         block->next = head;
         block->prev = NULL;
         head->prev = block;
         head = block;
     }
 }
-/**
- * 
- * 
- */
+
+void insert_with_ordering(block_t* block)
+{
+    /**
+     * If the head is null or the address of the block is less than that of the head,
+     * simply add the block to the beginning of the list
+     */
+    if (!head || block < head)
+    {
+        push_front(block);
+    }
+    else
+    {
+        block_t* current = head, * next = NULL;
+        while (current->next)
+        {
+            /**
+             * If the address of the block is less than the next block in the list,
+             * this block belongs between the current block and the next block
+             */
+            if (block < current->next)
+            {
+                next = current->next;
+
+                // Insert node between current and next node
+                current->next = block;
+                next->prev = block;
+                block->next = next;
+                block->prev = current;
+                return;
+            }
+
+            /**
+             * Keep iterating until the block is placed or the tail is reached
+             */
+            current = current->next;
+        }
+
+        /**
+         * Reached tail of the list. At this point, current is the tail of the list.
+         * Add the block to the end of the tail.
+         */
+        current->next = block;
+        block->next = NULL;
+        block->prev = current;
+    }
+}
+
 void remove_from_list(block_t* block)
 {
     block_t* prev = block->prev, * next = block->next;
@@ -73,24 +111,21 @@ void remove_from_list(block_t* block)
 void dump_free_list()
 {
     block_t* current = head;
-    printf("Dumping Free List...\n");
-
+    printf("Contents of Free List:\n");
     while (current)
     {
-    	printf("Address: 0x%p, Size: %d\n", current, current->size);
+        printf("Address: 0x%p, Size: %zu\n", current, current->size);
         current = current->next;
     }
-
-    printf("Finished Dump of Free List\n\n");
 }
 
 block_t* split_block(block_t* block, size_t bytes)
 {
     /*
-     * Casting the address of block to an unsigned long is necessary because 
+     * Casting the address of block to an unsigned long is necessary because
      * otherwise the amount added is scaled by the amount of bytes in a block_t
      * struct
-     */ 
+     */
     block_t* newBlock = (block_t*)((unsigned long)block + bytes + BLOCK_SIZE);
 
     newBlock->size = block->size - bytes - BLOCK_SIZE;
@@ -105,7 +140,7 @@ block_t* find_first_fit(size_t bytes)
     // Iterate over all blocks in the list to find the first one large enough
     while (current)
     {
-        if (current->size >= (unsigned long)bytes + BLOCK_SIZE)
+        if (current->size >= bytes + BLOCK_SIZE)
         {
             return current;
         }
@@ -114,34 +149,20 @@ block_t* find_first_fit(size_t bytes)
     return NULL;
 }
 
-void mem_free(void* ptr)
-{
-    // Find the block containing the memory segment pointed to
-    block_t* header = BLOCK(ptr);
-
-    //Add the block to the list of free blocks
-    add_to_list(header);
-}
-
-void coalesce_list()
-{
-
-}
-
 void* mem_alloc(size_t bytes)
 {
     // Handling spurious allocation requests
-    if (bytes <= 0) {return NULL;}
+    if (bytes <= 0) { return NULL; }
 
     // If the free list hasn't been created, do so
-    if (!head) {init_mem_alloc();}
+    if (!head) { init_mem_alloc(); }
 
-    // Align the data to be a multiple of 16
+    // Align the data to be a multiple of 8 bytes
     size_t aligned = ALIGN(bytes);
-    
+
     // Find the first block that has enough bytes available
     block_t* allocatedBlock = find_first_fit(bytes);
-    
+
     // Remove the allocated block from the free list
     remove_from_list(allocatedBlock);
 
@@ -154,11 +175,11 @@ void* mem_alloc(size_t bytes)
     {
         // Split the allocated block into two halves, with this being the remaining free half
         block_t* freeBlock = split_block(allocatedBlock, aligned);
-        
-        // Add the block to the list of free blocks
-        add_to_list(freeBlock);
 
-        // Return the memory address of the allocated block's available memory
+        // Add the block to the list of free blocks
+        insert_with_ordering(freeBlock);
+
+        // Return the memory address of the allocated block's available section
         return MEM(allocatedBlock);
     }
 }
@@ -173,14 +194,49 @@ void mem_copy(void* src, void* destination, size_t bytes)
     }
 }
 
+void merge(block_t* block, block_t* neighbor)
+{
+    /**
+     * Consume the size of the neighboring block and remove it from the list
+     */
+    block->size = block->size + neighbor->size;
+    remove_from_list(neighbor);
+}
+
+void coalesce_free_blocks()
+{
+    block_t* current = head;
+    // Traverse the free-list
+    while (current)
+    {
+        // If the neighboring block in memory is the next free block 
+        if (NEIGHBOR(current) == current->next)
+        {
+            // Merge the current block and the next block into one
+            merge(current, current->next);
+        }
+        current = current->next;
+    }
+}
+
+void mem_free(void* ptr)
+{
+    // Find the block containing the memory segment pointed to
+    block_t* header = BLOCK(ptr);
+
+    // Add the block to the list of free blocks
+    insert_with_ordering(header);
+
+    // Coalesce any contiguous free-blocks
+    coalesce_free_blocks();
+}
+
 int main()
 {
-    int* a = mem_alloc(128);
-
-    
-    
+    for (int i = 1; i < 10; i++)
+    {
+        int* temp = mem_alloc(i * 8);
+        mem_free(temp);
+    }
     dump_free_list();
-
-	block_t *maybe = BLOCK(a);
-	printf("%d\n", (unsigned long)head - (unsigned long)maybe - 128 - 16);
 }
