@@ -12,9 +12,9 @@ struct block_t
 #define MAX_BYTES MEGABYTE
 #define BLOCK_SIZE ((sizeof(block_t) + 7 ) & (-8))
 #define ALIGN(bytes) (bytes % 8 == 0 ? bytes : ((bytes + 7) & (-8)))
-#define BLOCK(ptr) ((block_t*)((unsigned long)ptr - BLOCK_SIZE))
-#define MEM(block) ((void*)((unsigned long)block + BLOCK_SIZE))
-#define NEIGHBOR(block) ((block_t*)((unsigned long)block + BLOCK_SIZE + block->size))
+#define BLOCK(ptr) ((block_t*)((byte*)ptr - BLOCK_SIZE))
+#define MEM(block) ((void*)((byte*)block + BLOCK_SIZE))
+#define NEIGHBOR(block) ((block_t*)((byte*)block + BLOCK_SIZE + block->size))
 
 static byte mallocBuffer[MAX_BYTES];
 static block_t* head = NULL;
@@ -122,11 +122,11 @@ void dump_free_list()
 block_t* split_block(block_t* block, size_t bytes)
 {
     /*
-     * Casting the address of block to an unsigned long is necessary because
+     * Casting the address of block to a byte pointer is necessary because
      * otherwise the amount added is scaled by the amount of bytes in a block_t
      * struct
      */
-    block_t* newBlock = (block_t*)((unsigned long)block + bytes + BLOCK_SIZE);
+    block_t* newBlock = (block_t*)((byte*)block + bytes + BLOCK_SIZE);
 
     newBlock->size = block->size - bytes - BLOCK_SIZE;
     block->size = bytes;
