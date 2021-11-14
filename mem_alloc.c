@@ -3,8 +3,7 @@
 
 void init_mem_alloc()
 {
-    head = (block_t*)(sbrk(0));
-    sbrk(PAGE_SIZE);
+    head = (block_t*)(sbrk(PAGE_SIZE));
     head->size = PAGE_SIZE - BLOCK_SIZE;
     head->next = NULL;
     head->prev = NULL;
@@ -237,6 +236,12 @@ void mem_free(void* ptr)
 
     // Coalesce any contiguous free-blocks
     coalesce_free_blocks();
+}
+
+void* mem_calloc(size_t n, size_t size) 
+{
+    // Returns a contiguous block of n x size bytes
+    return mem_alloc(n * size);        
 }
 
 int main()
