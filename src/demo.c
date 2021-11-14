@@ -2,9 +2,10 @@
 
 int main()
 {
-    int* a = mem_calloc(10, sizeof(int));
-    int *b = mem_calloc(100, sizeof(int));
-    mem_free(a);
+    byte* a = mem_alloc(256);
+    byte* b = mem_alloc(512);
     mem_free(b);
+    mem_free(a);
     dump_free_list();
+
 }

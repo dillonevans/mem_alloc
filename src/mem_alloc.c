@@ -5,6 +5,7 @@ static bool isInitialized = false;
 
 void init_mem_alloc()
 {
+    isInitialized = true;
     block_t * block = (block_t*)(sbrk(PAGE_SIZE));
     block->size = PAGE_SIZE - BLOCK_SIZE;
     insert_with_ordering(block);
@@ -16,11 +17,7 @@ void* mem_alloc(size_t bytes)
     if (bytes <= 0) { return NULL; }
 
     //If the free list hasn't been initialized, do so.
-    if (!isInitialized) 
-    {
-        init_mem_alloc(); 
-        isInitialized = true;
-    }
+    if (!isInitialized) { init_mem_alloc(); }
 
     // Align the data to be a multiple of 8 bytes
     size_t aligned = ALIGN(bytes);
@@ -62,7 +59,7 @@ void* mem_alloc(size_t bytes)
         if (startingAddress == UNSUCCESSFUL) {
             return NULL;
         }
-        // Create a block just beyond the last page break
+        // Create a block just beyond the last program break
         block_t* block = (block_t*)(startingAddress);
         block->size = allocatedBytes - BLOCK_SIZE;
 
