@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <unistd.h>
 typedef unsigned char byte;
 typedef struct block_t block_t;
 
@@ -8,22 +9,22 @@ struct block_t
     size_t size;
 };
 
-#define MEGABYTE 1024 * 1024
-#define MAX_BYTES MEGABYTE
+#define PAGE_SIZE getpagesize()
+#define UNSUCCESSFUL (void*)(-1)
+#define SCALE_FACTOR 2
 #define BLOCK_SIZE ((sizeof(block_t) + 7 ) & (-8))
 #define ALIGN(bytes) (bytes % 8 == 0 ? bytes : ((bytes + 7) & (-8)))
 #define BLOCK(ptr) ((block_t*)((byte*)ptr - BLOCK_SIZE))
 #define MEM(block) ((void*)((byte*)block + BLOCK_SIZE))
 #define NEIGHBOR(block) ((block_t*)((byte*)block + BLOCK_SIZE + block->size))
 
-static byte mallocBuffer[MAX_BYTES];
 static block_t* head = NULL;
 
 void init_mem_alloc()
 {
-
-    head = (block_t*)(mallocBuffer);
-    head->size = MAX_BYTES - BLOCK_SIZE;
+    head = (block_t*)(sbrk(0));
+    sbrk(PAGE_SIZE);
+    head->size = PAGE_SIZE - BLOCK_SIZE;
     head->next = NULL;
     head->prev = NULL;
 }
@@ -114,7 +115,7 @@ void dump_free_list()
     printf("Contents of Free List:\n");
     while (current)
     {
-        printf("Address: 0x%p, Size: %zu\n", current, current->size);
+        printf("Address: 0x%p, Size: %lu\n", current, current->size);
         current = current->next;
     }
 }
@@ -163,24 +164,49 @@ void* mem_alloc(size_t bytes)
     // Find the first block that has enough bytes available
     block_t* allocatedBlock = find_first_fit(bytes);
 
-    // Remove the allocated block from the free list
-    remove_from_list(allocatedBlock);
-
-    // If the allocated block is a perfect fit, simply return the memory
-    if (allocatedBlock->size == aligned + BLOCK_SIZE)
+    if (allocatedBlock)
     {
-        return MEM(allocatedBlock);
+        // Remove the allocated block from the free list
+        remove_from_list(allocatedBlock);
+
+        // If the allocated block is a perfect fit, simply return the memory
+        if (allocatedBlock->size == aligned + BLOCK_SIZE)
+        {
+            return MEM(allocatedBlock);
+        }
+        else
+        {
+            // Split the allocated block into two halves, with this being the remaining free half
+            block_t* freeBlock = split_block(allocatedBlock, aligned);
+
+            // Add the block to the list of free blocks
+            insert_with_ordering(freeBlock);
+
+            // Return the memory address of the allocated block's available section
+            return MEM(allocatedBlock);
+        }
     }
     else
     {
-        // Split the allocated block into two halves, with this being the remaining free half
-        block_t* freeBlock = split_block(allocatedBlock, aligned);
+        // Allocate a scaled amount of the number of bytes + the size of the block
+        size_t allocatedBytes = (aligned * SCALE_FACTOR) + BLOCK_SIZE;
+        
+        // Increase available heap memory
+        byte* startingAddress = sbrk(allocatedBytes);
 
-        // Add the block to the list of free blocks
-        insert_with_ordering(freeBlock);
+        // If no more memory could be allocated, return null
+        if (startingAddress == UNSUCCESSFUL) {
+            return NULL;
+        }
+        // Create a block just beyond the last page break
+        block_t* block = (block_t*)(startingAddress);
+        block->size = allocatedBytes - BLOCK_SIZE;
 
-        // Return the memory address of the allocated block's available section
-        return MEM(allocatedBlock);
+        // Insert the new block into the free list
+        insert_with_ordering(block);
+
+        // Try the allocation again with the addition space
+        return mem_alloc(aligned);
     }
 }
 
@@ -206,6 +232,7 @@ void merge(block_t* block, block_t* neighbor)
 void coalesce_free_blocks()
 {
     block_t* current = head;
+    
     // Traverse the free-list
     while (current)
     {
@@ -233,10 +260,27 @@ void mem_free(void* ptr)
 
 int main()
 {
-    for (int i = 1; i < 10; i++)
+    // Allocate a full page
+    int* a = mem_alloc(sizeof(int) * 1024);
+
+    // Write to allocated memory
+    for (int i = 0; i < 1024; i++)
     {
-        int* temp = mem_alloc(i * 8);
-        mem_free(temp);
+        *(a + i) = i;
     }
+
+    // Allocate half a page
+    int *b = mem_alloc(sizeof(int) * 512);
+
+    // Free the memory allocated by a
+    mem_free(a);
+    
+    // Write to allocated memory
+    for (int i = 0; i < 512; i++)
+    {
+        *(b + i) = i;
+    }
+
+    // Display the free list
     dump_free_list();
 }
